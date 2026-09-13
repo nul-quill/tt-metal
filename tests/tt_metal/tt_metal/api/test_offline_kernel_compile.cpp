@@ -194,6 +194,14 @@ TEST_F(OfflineKernelCompileMockFixture, CPU_CompileKernelOfflineRejectsEmptyOutp
     EXPECT_THROW(experimental::CompileKernelOffline(kReaderKernelPath, kReaderDmConfig, params), std::invalid_argument);
 }
 
+TEST_F(OfflineKernelCompileMockFixture, CPU_CompileKernelOfflineRejectsComputeProcessor) {
+    experimental::OfflineKernelCompileParams params{.output_dir = fs::path("/tmp/unused")};
+    EXPECT_ANY_THROW(experimental::CompileKernelOffline(
+        "tests/tt_metal/tt_metal/test_kernels/compute/blank.cpp",
+        ComputeConfig{.processor = ComputeProcessor::MATH},
+        params));
+}
+
 // Returns the number of subdirectories directly under `dir` whose names parse as decimal digits
 // (i.e. compile-hash buckets). Returns 0 if `dir` does not exist.
 size_t count_compile_hash_subdirs(const fs::path& dir) {
