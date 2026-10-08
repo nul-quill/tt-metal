@@ -464,6 +464,12 @@ struct ProgramArgs {
     bool all_solutions = false;       // --all-solutions/-a: one artifact set per solution (single-MGD only)
     std::size_t max_solutions = 0;    // --max-solutions/-n: cap (0 = all up to solver cap); implies --all-solutions
     bool distinct_host_sets = false;  // --distinct-host-sets/-d: one solution per unique host set
+    // --max-duplicate-streak: with --distinct-host-sets, stop enumerating after this many CONSECUTIVE
+    // solutions that only repeat an already-seen host set (0 = never). The SAT enumeration explores
+    // near-neighbour assignments, so once every distinct host set is out it can emit tens of thousands of
+    // same-host-set re-orderings without ever exhausting -- and while it runs it holds the chips'
+    // CHIP_IN_USE locks, blocking the workload that is supposed to run on the solutions it already wrote.
+    std::size_t max_duplicate_streak = 1000;
     bool allow_shape_permutations = false;  // hidden: disable the solver's unique_shapes dedup
 };
 
@@ -505,7 +511,11 @@ ProgramArgs parse_arguments(int argc, char** argv) {
         "d,distinct-host-sets",
         "Keep only one solution per unique set of HOSTS: after enumeration, solutions that occupy the same hosts "
         "(even if they wire/assign the meshes differently) are collapsed to the first. Only meaningful with "
-        "--all-solutions.")("h,help", "Print usage information");
+        "--all-solutions.")(
+        "max-duplicate-streak",
+        "With --distinct-host-sets: stop enumerating after this many consecutive solutions that only repeat an "
+        "already-seen host set (the index is then marked truncated). 0 = never stop on duplicates. Default 1000.",
+        cxxopts::value<std::size_t>()->default_value("1000"))("h,help", "Print usage information");
 
     // Hidden/advanced options (in a separate group so they do NOT appear in --help).
     options.add_options("hidden")(
@@ -551,6 +561,9 @@ ProgramArgs parse_arguments(int argc, char** argv) {
         }
         if (result.contains("all-solutions")) {
             args.all_solutions = true;
+        }
+        if (result.contains("max-duplicate-streak")) {
+            args.max_duplicate_streak = result["max-duplicate-streak"].as<std::size_t>();
         }
         if (result.contains("distinct-host-sets")) {
             args.distinct_host_sets = true;
@@ -727,6 +740,7 @@ int main(int argc, char** argv) {
                 constexpr std::size_t kEnumerationSafetyCap = 500000;
                 const std::size_t effective_cap = args.max_solutions != 0 ? args.max_solutions : kEnumerationSafetyCap;
                 std::size_t emitted = 0;
+                std::size_t duplicate_streak = 0;  // consecutive already-seen host sets (--distinct-host-sets)
                 bool cap_reached = false;
                 while (true) {
                     const std::size_t capped_count = args.distinct_host_sets ? index_entries.size() : emitted;
@@ -749,8 +763,20 @@ int main(int argc, char** argv) {
                             tt::LogFabric,
                             "--distinct-host-sets: skipping solution on an already-seen host set ({} hosts)",
                             hosts.size());
+                        ++duplicate_streak;
+                        if (args.max_duplicate_streak != 0 && duplicate_streak >= args.max_duplicate_streak) {
+                            log_info(
+                                tt::LogFabric,
+                                "--distinct-host-sets: {} consecutive solution(s) only repeated already-seen host "
+                                "sets (--max-duplicate-streak); stopping enumeration with {} distinct host set(s)",
+                                duplicate_streak,
+                                index_entries.size());
+                            cap_reached = true;  // more distinct sets MAY exist -> index stays truncated=true
+                            break;
+                        }
                         continue;
                     }
+                    duplicate_streak = 0;
 
                     // Disambiguate short-hash collisions BEFORE writing: if the natural dir already holds a
                     // DIFFERENT solution (its .solution_key differs from this one's canonical signature), pick a
