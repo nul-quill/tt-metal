@@ -20,11 +20,12 @@
   cmd: |
     mkdir -p generated/test_reports
     pytest --noconftest -p tests.perf.plugin "tests/perf/test_suites.py::test_perf[pgm_dispatch]"
-  # Bare-metal WH runner: host-bound no_trace cases vary by up to 25% across the shared civ2 VMs.
+  # Host-bound no_trace cases need consistent hosts: they vary by up to 25% across civ2 VMs and
+  # by 12% to 27% across the bh_p150_perf machines.
   skus:
     wh_n300_perf:
       timeout: 30
-    bh_p150_perf:
+    bh_quietbox_2:
       timeout: 30
   owner_id: U099A7FMKL2 # Manish Sudumbrekar
   team: runtime
@@ -53,10 +54,11 @@
   cmd: |
     mkdir -p generated/test_reports
     pytest --noconftest -p tests.perf.plugin "tests/perf/test_suites.py::test_perf[jit_build]"
+  # Compile time scales with host cores, which differ across the bh_p150_perf machines.
   skus:
     wh_n300_civ2:
       timeout: 10
-    bh_p150_perf:
+    bh_quietbox_2:
       timeout: 10
   owner_id: U099A7FMKL2 # Manish Sudumbrekar
   team: runtime

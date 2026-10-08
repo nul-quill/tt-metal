@@ -289,7 +289,8 @@ runtime:
   perf:
     wh_n300_civ2: 35
     wh_n300_perf: 30
-    bh_p150_perf: 50
+    bh_p150_perf: 10
+    bh_quietbox_2: 40
     bh_p150b_civ2_viommu: 10
   perf_profiler:
     wh_n300_civ2: 5
