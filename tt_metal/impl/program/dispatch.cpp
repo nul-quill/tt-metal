@@ -278,6 +278,29 @@ uint32_t finalize_rt_args(
     uint32_t max_crta_size = program_dispatch::configure_crta_offsets_for_kernel_groups(
         metal_ctx, programmable_core_type_index, kernels, kernel_groups, crta_base_offset);
 
+    // A MATH or PACK kernel that selects its processor takes no space: it reads the UNPACK kernel's
+    // runtime arguments at UNPACK's offsets, so callers set them on the UNPACK kernel.
+    for (auto& kg : kernel_groups) {
+        auto offsets = kg->launch_msg.view().kernel_config().rta_offset();
+        for (uint32_t idx = 0; idx < kg->kernel_ids.size(); idx++) {
+            const auto& kernel = kernels.at(kg->kernel_ids[idx]);
+            const auto processor = kernel->compute_processor();
+            if (processor.value_or(ComputeProcessor::UNPACK) == ComputeProcessor::UNPACK) {
+                continue;
+            }
+            TT_FATAL(
+                kg->rta_sizes[idx] == 0 && kg->crta_sizes[idx] == 0,
+                "Compute kernel {} on TRISC{} reads the UNPACK kernel's runtime arguments, so it must not have its own",
+                kernel->name(),
+                enchantum::to_underlying(*processor));
+            const uint32_t unpack = metal_ctx.hal().get_processor_index(
+                kernel->get_kernel_programmable_core_type(), HalProcessorClassType::COMPUTE, 0);
+            const uint32_t own = kernel->get_processor_indices_for_binary(0)[0];
+            offsets[own].rta_offset() = offsets[unpack].rta_offset();
+            offsets[own].crta_offset() = offsets[unpack].crta_offset();
+        }
+    }
+
     uint32_t offset = max_unique_rta_size + max_crta_size;
 
     rta_offset = base_offset;
